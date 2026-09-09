@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "youtube-downloader-pro"
+version = "2.0.0"
+description = "A Qt desktop front end for yt-dlp with parallel playlist downloads"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Dipayan Das" }]
+keywords = ["youtube", "downloader", "yt-dlp", "pyside6", "qt", "playlist"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "PySide6>=6.7",
+    "yt-dlp>=2024.1.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5", "pyinstaller>=6.0"]
+
+[project.gui-scripts]
+ytdpro = "ytdpro.app:main"
+
+[project.urls]
+Homepage = "https://github.com/ddipayan00/YouTubeDownloaderPro"
+
+[tool.setuptools.packages.find]
+include = ["ytdpro*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
