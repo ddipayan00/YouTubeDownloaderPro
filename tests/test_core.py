@@ -151,7 +151,7 @@ class TestFfmpegDiscovery:
         monkeypatch.delattr(sys, "_MEIPASS", raising=False)
         monkeypatch.setattr(sys, "executable", str(tmp_path / "app"), raising=False)
         monkeypatch.setattr(engine.shutil, "which", lambda _: "/usr/bin/ffmpeg")
-        assert engine.find_ffmpeg() == "/usr/bin"
+        assert engine.find_ffmpeg() == str(Path("/usr/bin/ffmpeg").parent)
 
     def test_returns_none_when_unavailable(self, tmp_path, monkeypatch):
         monkeypatch.setattr(sys, "frozen", True, raising=False)
