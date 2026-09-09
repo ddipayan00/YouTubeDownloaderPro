@@ -25,6 +25,7 @@ import stat
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -63,12 +64,20 @@ def platform_key() -> tuple[str, str]:
     return system, machine
 
 
-def download(url: str, target: Path) -> None:
+def download(url: str, target: Path, *, attempts: int = 3) -> None:
     print(f"  downloading {url}")
     request = urllib.request.Request(url, headers={"User-Agent": "ytdpro-build"})
-    with urllib.request.urlopen(request, timeout=180) as response, target.open("wb") as handle:
-        shutil.copyfileobj(response, handle)
-    print(f"  got {target.stat().st_size / 1_048_576:.1f} MB")
+    for attempt in range(1, attempts + 1):
+        with urllib.request.urlopen(request, timeout=180) as response, target.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+        size = target.stat().st_size
+        if size > 0:
+            print(f"  got {size / 1_048_576:.1f} MB")
+            return
+        if attempt < attempts:
+            print(f"  got an empty response, retrying ({attempt}/{attempts})...")
+            time.sleep(5 * attempt)
+    raise RuntimeError(f"{url} kept returning an empty response after {attempts} attempts.")
 
 
 def _wanted_name(member_name: str, is_windows: bool) -> str | None:
