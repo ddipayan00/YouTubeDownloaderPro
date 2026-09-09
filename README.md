@@ -109,16 +109,74 @@ up where it stopped. Delete them by hand if you do not intend to resume.
 
 ---
 
-## Building a standalone executable
+## Building standalone executables
+
+**PyInstaller cannot cross-compile.** There is no flag that turns a Linux machine into a
+Windows build host: the bootloader it stamps into the output is a native binary for the OS
+that ran it, and it bundles that machine's Python and Qt libraries. A `.exe` has to be built
+on Windows, a `.app` on macOS, an ELF binary on Linux.
+
+That leaves two honest options — build on each OS, or let CI do it for you.
+
+### Option 1 — build for the machine you are on
 
 ```bash
-pip install pyinstaller
-# put ffmpeg (and ffprobe) in bin/ first if you want them bundled
-pyinstaller youtube-downloader-pro.spec
+pip install -e ".[dev]"
+python tools/fetch_ffmpeg.py          # static ffmpeg + ffprobe into bin/
+pyinstaller --noconfirm youtube-downloader-pro.spec
+python tools/smoke_test.py            # launches the result and checks it works
 ```
 
-The result lands in `dist/youtube-downloader-pro/`. Anything in `bin/` is copied in
-alongside it, so the build runs on a machine with no Python and no ffmpeg.
+| Host | Output |
+|---|---|
+| Linux | `dist/youtube-downloader-pro/` (run the binary inside) |
+| Windows | `dist/youtube-downloader-pro/youtube-downloader-pro.exe` |
+| macOS | `dist/YouTube Downloader Pro.app` |
+
+`tools/fetch_ffmpeg.py` pulls a **static** build on purpose. Copying your package
+manager's ffmpeg would bundle a binary dynamically linked against your machine's
+libraries, and it would fail to start on anyone else's.
+
+### Option 2 — build all four at once in CI
+
+`.github/workflows/build.yml` runs the same steps on four runners — Linux, Windows,
+macOS Apple Silicon and macOS Intel — and uploads one archive per platform. This is the
+only way to produce every executable without owning every machine.
+
+```bash
+git tag v2.0.0 && git push origin v2.0.0
+```
+
+Pushing a `v*` tag also attaches the four archives to a GitHub release. Pushes and PRs to
+`main` build the same artifacts without releasing, so packaging breakage shows up as a red
+check rather than as a surprise on release day.
+
+### What the build includes
+
+Anything in `bin/` is bundled, so the app runs on a machine with no Python and no ffmpeg.
+The runtime looks for ffmpeg in `sys._MEIPASS/bin`, next to the executable, and in
+`Contents/Resources/bin` on macOS, which covers every layout the spec can produce.
+
+The spec strips Qt modules a widgets-only app never loads (Qml, Quick, Pdf, VirtualKeyboard).
+Listing them under `excludes` is not enough — PyInstaller pulls them in as binary
+dependencies of Qt plugins, so they are filtered out of the collected trees after analysis.
+UPX is deliberately off: it trips Windows SmartScreen and AV heuristics and invalidates
+macOS code signatures.
+
+Expect roughly **315 MB** on disk, about half of which is ffmpeg and ffprobe. Dropping
+ffprobe from the spec saves ~76 MB if you are willing to require a system ffmpeg.
+
+### Signing
+
+The builds are unsigned. Windows shows a SmartScreen warning; macOS refuses to open the app
+until you right-click → Open, or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine "YouTube Downloader Pro.app"
+```
+
+Signing needs a paid Apple Developer ID or an Authenticode certificate — add the signing
+step to the workflow once you have one.
 
 ---
 
@@ -140,6 +198,10 @@ ytdpro/
     ├── playlist_model.py  Queue table model + progress-bar delegate
     ├── theme.py           Palettes and the generated stylesheet
     └── common.py          Shared widgets (Card, StatRow)
+
+tools/
+├── fetch_ffmpeg.py        Downloads a static ffmpeg/ffprobe for this platform
+└── smoke_test.py          Launches a packaged build and verifies it starts
 ```
 
 **How the threading works.** Every blocking yt-dlp call runs in a `QRunnable` on a

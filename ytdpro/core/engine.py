@@ -46,19 +46,37 @@ def explain_error(message: str, *, has_ffmpeg: bool) -> str:
     return message
 
 
-def _app_root() -> Path:
-    """Directory to look in for a bundled ffmpeg, frozen or not."""
+def _candidate_roots() -> list[Path]:
+    """Every directory that might hold a bundled ffmpeg, most specific first.
+
+    A PyInstaller onedir build unpacks data into ``sys._MEIPASS`` (the
+    ``_internal`` folder), which is *not* the directory holding the executable —
+    so both have to be checked, or the ffmpeg we deliberately bundled is missed.
+    A macOS .app puts the executable in ``Contents/MacOS`` and resources in
+    ``Contents/Resources``, so that pairing is covered too.
+    """
+    roots: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.append(Path(meipass))
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(__file__).resolve().parents[2]
+        exe_dir = Path(sys.executable).parent
+        roots.append(exe_dir)
+        # .../Foo.app/Contents/MacOS/foo -> .../Foo.app/Contents/Resources
+        if exe_dir.name == "MacOS":
+            roots.append(exe_dir.parent / "Resources")
+    else:
+        roots.append(Path(__file__).resolve().parents[2])
+    return roots
 
 
 def find_ffmpeg() -> str | None:
-    """Locate ffmpeg: a copy bundled in ./bin wins, otherwise fall back to PATH."""
+    """Locate ffmpeg: a bundled or side-by-side copy wins, else fall back to PATH."""
     suffix = ".exe" if sys.platform == "win32" else ""
-    bundled = _app_root() / "bin" / f"ffmpeg{suffix}"
-    if bundled.is_file():
-        return str(bundled.parent)
+    for root in _candidate_roots():
+        for candidate in (root / "bin" / f"ffmpeg{suffix}", root / f"ffmpeg{suffix}"):
+            if candidate.is_file():
+                return str(candidate.parent)
     system = shutil.which("ffmpeg")
     if system:
         return str(Path(system).parent)

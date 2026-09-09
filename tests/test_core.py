@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 
+from ytdpro.core import engine
 from ytdpro.core.engine import FFMPEG_HINT, explain_error
 from ytdpro.core.formats import ALL_PRESETS, preset_by_label
 from ytdpro.core.tasks import (
@@ -101,3 +105,57 @@ class TestFolderNames:
 
     def test_length_is_capped(self):
         assert len(safe_folder_name("x" * 500)) == 120
+
+
+class TestFfmpegDiscovery:
+    """Regression cover for the packaged-app lookup.
+
+    A PyInstaller onedir build unpacks data into sys._MEIPASS (the _internal
+    folder), not next to the executable. Searching only the executable's own
+    directory meant a bundled ffmpeg was never found in a real build.
+    """
+
+    @staticmethod
+    def _make_ffmpeg(root: Path) -> Path:
+        bin_dir = root / "bin"
+        bin_dir.mkdir(parents=True)
+        binary = bin_dir / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+        binary.write_text("")
+        return bin_dir
+
+    def test_finds_ffmpeg_in_meipass(self, tmp_path, monkeypatch):
+        bin_dir = self._make_ffmpeg(tmp_path / "_internal")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "_internal"), raising=False)
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "app"), raising=False)
+        assert engine.find_ffmpeg() == str(bin_dir)
+
+    def test_finds_ffmpeg_beside_the_executable(self, tmp_path, monkeypatch):
+        bin_dir = self._make_ffmpeg(tmp_path)
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "app"), raising=False)
+        assert engine.find_ffmpeg() == str(bin_dir)
+
+    def test_finds_ffmpeg_in_macos_app_resources(self, tmp_path, monkeypatch):
+        contents = tmp_path / "App.app" / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        bin_dir = self._make_ffmpeg(contents / "Resources")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+        monkeypatch.setattr(sys, "executable", str(contents / "MacOS" / "app"), raising=False)
+        assert engine.find_ffmpeg() == str(bin_dir)
+
+    def test_falls_back_to_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "app"), raising=False)
+        monkeypatch.setattr(engine.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+        assert engine.find_ffmpeg() == "/usr/bin"
+
+    def test_returns_none_when_unavailable(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "app"), raising=False)
+        monkeypatch.setattr(engine.shutil, "which", lambda _: None)
+        assert engine.find_ffmpeg() is None
