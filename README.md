@@ -250,3 +250,4 @@ YouTube's Terms of Service. That is on you.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+Version:1.0.0
